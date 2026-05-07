@@ -242,12 +242,21 @@ compute_shannon_equitability <- function(mutations_list, num_possible_mutations)
 fix_mutspace <- function(df) {
   # If df might be an S4 DataFrame, coerce to tibble to keep dplyr semantics
   df <- tibble::as_tibble(df)
-  
+
   df <- df %>%
     dplyr::rename_with(~ "possible_mutations", tidyselect::any_of("possible_aa_mutations")) %>%
     dplyr::mutate(
-      possible_mutations = stringr::str_remove_all(.data$possible_mutations,
-                                                   paste0("\\b", .data$original_aa, "\\b")),
+      # Remove original_aa from the space-separated possible_mutations string.
+      # Uses split/setdiff/rejoin rather than regex word boundaries so that
+      # non-word characters like '*' (stop codon) are handled correctly.
+      possible_mutations = purrr::map2_chr(
+        .data$possible_mutations,
+        .data$original_aa,
+        function(poss, orig) {
+          if (is.na(poss) || poss == "") return(poss)
+          paste(setdiff(strsplit(poss, "\\s+")[[1L]], orig), collapse = " ")
+        }
+      ),
       possible_mutations = stringr::str_squish(possible_mutations),
       num_possible_mutations = dplyr::if_else(
         is.na(possible_mutations) | possible_mutations == "", 0L,
@@ -255,7 +264,7 @@ fix_mutspace <- function(df) {
       )
     ) %>%
     dplyr::select(-tidyselect::any_of("num_possible_aa_mutations"))
-  
+
   df
 }
 

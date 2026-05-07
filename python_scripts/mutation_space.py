@@ -1,20 +1,23 @@
 #!/usr/bin/env python
 #==============================================================================
 # File Name :      mutation_space.py
-# Description :    Find all possible amino acid mutations for each locus in a 
-#                  genesequence, assuming only one nucleotide per codon can be 
-#                  mutated at a time.  
+# Description :    Find all possible amino acid mutations for each locus in a
+#                  genesequence, assuming only one nucleotide per codon can be
+#                  mutated at a time.
 # Usage :          python3 mutation_space.py geneseq.txt out.csv
 # Author :         Aura Ferreiro, alferreiro@wustl.edu
-# Version :        1.0
+# Version :        1.1
 # Created On :     2024-02-26
-# Last Modified:   2024-02-26
+# Last Modified:   2026-05-07
+#   v1.1: stop codons now encoded as '*' (consistent with preprocess_variantdicts);
+#         use .get() to avoid KeyError on ambiguous bases (N, etc.);
+#         read_sequence skips FASTA header lines
 #===============================================================================
 
 import sys
 import pandas as pd
 
-# Standard Genetic Code Dictionary
+# Stop codons use '*' to match the decode table in preprocess_variantdicts_keepall.py
 GENETIC_CODE = {
     'ATA':'I', 'ATC':'I', 'ATT':'I', 'ATG':'M',
     'ACA':'T', 'ACC':'T', 'ACG':'T', 'ACT':'T',
@@ -30,14 +33,13 @@ GENETIC_CODE = {
     'GGA':'G', 'GGC':'G', 'GGG':'G', 'GGT':'G',
     'TCA':'S', 'TCC':'S', 'TCG':'S', 'TCT':'S',
     'TTC':'F', 'TTT':'F', 'TTA':'L', 'TTG':'L',
-    'TAC':'Y', 'TAT':'Y', 'TAA':'_', 'TAG':'_',
-    'TGC':'C', 'TGT':'C', 'TGA':'_', 'TGG':'W',
+    'TAC':'Y', 'TAT':'Y', 'TAA':'*', 'TAG':'*',
+    'TGC':'C', 'TGT':'C', 'TGA':'*', 'TGG':'W',
 }
 
 genefile = sys.argv[1]
-outfile = sys.argv[2]
+outfile  = sys.argv[2]
 
-# find possible single nucleotide variants for a codon
 
 def mutate_codon(codon):
     mutations = []
@@ -47,34 +49,43 @@ def mutate_codon(codon):
             if codon[i] != nuc:
                 mutations.append(codon[:i] + nuc + codon[i+1:])
     return mutations
-    
+
+
 def read_sequence(file_path):
-    with open(file_path, 'r') as file:
-        return file.read().strip().upper()
-        
+    """Read a nucleotide sequence from a plain-text or FASTA file."""
+    with open(file_path, 'r') as fh:
+        return ''.join(
+            line.strip() for line in fh if not line.startswith('>')
+        ).upper()
+
 
 def analyze_sequence(sequence):
     data = []
     for i in range(0, len(sequence), 3):
         codon = sequence[i:i+3]
-        original_aa = GENETIC_CODE[codon]
+        if len(codon) < 3:
+            break
+        # Use .get() so ambiguous bases (N, etc.) return '?' rather than KeyError
+        original_aa = GENETIC_CODE.get(codon, '?')
         mutations = mutate_codon(codon)
-        mutated_aas = {GENETIC_CODE[m] for m in mutations if m in GENETIC_CODE}
-        
-       
-        
+        mutated_aas = {GENETIC_CODE.get(m, '?') for m in mutations} - {'?'}
         data.append({
             'locus': i // 3 + 1,
             'original_aa': original_aa,
-            'possible_aa_mutations': ' '.join(mutated_aas),
+            'possible_aa_mutations': ' '.join(sorted(mutated_aas)),
             'num_possible_aa_mutations': len(mutated_aas)
         })
     return pd.DataFrame(data)
-    
-def main(file_path):
+
+
+def main(file_path, out_path):
     sequence = read_sequence(file_path)
     df = analyze_sequence(sequence)
-    df.to_csv(outfile, index=False)
-    
-    
-main(genefile)
+    df.to_csv(out_path, index=False)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 3:
+        print("Usage: python3 mutation_space.py <geneseq.txt> <out.csv>")
+        sys.exit(1)
+    main(sys.argv[1], sys.argv[2])

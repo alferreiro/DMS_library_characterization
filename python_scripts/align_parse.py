@@ -5,9 +5,12 @@
 #                  Part I of the alignparse pipeline.
 # Usage :          python3 align_parse.py <arguments>
 # Author :         Aura Ferreiro, alferreiro@wustl.edu
-# Version :        1.1
+# Version :        1.2
 # Created On :     2023-12-11
-# Last Modified:   2026-05-01  (added --fastq full-path arg, .fastq.gz support)
+# Last Modified:   2026-05-07
+#   v1.1: added --fastq full-path arg, .fastq.gz support
+#   v1.2: --minimap2 CLI arg (was hardcoded); targeted warning suppression;
+#         required=True for all mandatory args
 #===============================================================================
 
 import sys
@@ -27,16 +30,22 @@ from alignparse.constants import CBPALETTE
 
 import dms_variants.utils
 
-warnings.simplefilter("ignore")
+# Suppress DeprecationWarning and FutureWarning from third-party libraries
+# (alignparse, dms_variants, plotnine emit many of these internally).
+# RuntimeWarning and UserWarning remain visible as they may indicate real problems.
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
 
 # ARGUMENTS ####################################################################
 parser = argparse.ArgumentParser(
     description='Characterize UMI-barcoded DMS variants from PacBio CCS data.')
 
-parser.add_argument('--outdir',       help='output directory')
-parser.add_argument('--target_gb',    help='annotated genbank file')
-parser.add_argument('--library_name', help='library label, e.g. "target_seq"')
-parser.add_argument('--yaml',         help='alignparse config yaml')
+parser.add_argument('--outdir',       required=True,  help='output directory')
+parser.add_argument('--target_gb',    required=True,  help='annotated genbank file')
+parser.add_argument('--library_name', required=True,  help='library label, e.g. "target_seq"')
+parser.add_argument('--yaml',         required=True,  help='alignparse config yaml')
+parser.add_argument('--minimap2',     required=True,
+                    help='path to minimap2 executable')
 
 # Two ways to specify the fastq: full path OR run_name + fq_dir
 fastq_group = parser.add_mutually_exclusive_group(required=True)
@@ -58,7 +67,6 @@ else:
     if not args.fq_dir:
         parser.error("--fq_dir is required when using --run_name")
     run_name = args.run_name
-    # Try both extensions
     for ext in ['.fq.gz', '.fastq.gz']:
         fastq_path = os.path.join(args.fq_dir, run_name + ext)
         if os.path.exists(fastq_path):
@@ -67,10 +75,10 @@ else:
         raise FileNotFoundError(
             f"Could not find {run_name}.fq.gz or {run_name}.fastq.gz in {args.fq_dir}")
 
-outdir       = args.outdir
+outdir         = args.outdir
 target_genbank = args.target_gb
-libraries    = args.library_name
-config_file  = args.yaml
+libraries      = args.library_name
+config_file    = args.yaml
 
 os.makedirs(outdir, exist_ok=True)
 
@@ -104,10 +112,10 @@ print(tuple(pacbio_runs["name"]))
 print('Parsing configuration:\n')
 print(targets.feature_parse_specs("yaml"))
 
-# minimap2 mapper
+# minimap2 mapper — path provided via --minimap2 argument
 mapper = alignparse.minimap2.Mapper(
     alignparse.minimap2.OPTIONS_CODON_DMS,
-    prog='/home/alferreiro/minimap2/minimap2',
+    prog=args.minimap2,
     retain_tags=None)
 print(f"minimap2 {mapper.version}: " + " ".join(mapper.options))
 
