@@ -7,6 +7,16 @@ CRISPR/
 # ── Stray files not part of the pipeline ─────────────────────────────────────
 DBaldridge_SMO/SMO_genesequence.txt
 
+# ── Scripts from other projects (kept locally, not part of this pipeline) ────
+python_scripts/build_combined_fastq_manifest.py
+python_scripts/fix_bad_samples_and_add_fastq11.py
+python_scripts/merge_bbmerge_with_samplemap.py
+shell_scripts/screen01_mergeR1R2.bash
+shell_scripts/screen01b_summarize_bbmerge_logs.bash
+shell_scripts/submit_concat_fastqs_dryrun.sh
+shell_scripts/submit_fix_bad_samples_and_add_fastq11.sh
+240704_DMS_RunSummaries_SDN.csv
+
 # ── Raw sequencing data (large) ───────────────────────────────────────────────
 *.fastq.gz
 *.fq.gz

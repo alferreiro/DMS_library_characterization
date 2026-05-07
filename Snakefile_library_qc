@@ -121,16 +121,19 @@ rule align_parse:
         mem_mb   = 24000,
         runtime  = "8h",
         slurm_partition = "general",
+    params:
+        minimap2 = config["minimap2"],
     shell:
         """
         mkdir -p {LOGS}
         source shell_scripts/activate_env.sh
         python python_scripts/align_parse.py \
-            --outdir  {OUTDIR} \
-            --target_gb {input.gb} \
-            --fastq   {input.fastq} \
+            --outdir       {OUTDIR} \
+            --target_gb    {input.gb} \
+            --fastq        {input.fastq} \
             --library_name target_seq \
-            --yaml    {input.yml} \
+            --yaml         {input.yml} \
+            --minimap2     {params.minimap2} \
             > {log} 2>&1
         """
 

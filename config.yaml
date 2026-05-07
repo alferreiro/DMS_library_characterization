@@ -7,6 +7,7 @@ yaml_config: "/scratch/rmlab/rmlab_shared3/alferreiro/DMS_PacBio/DBaldridge_SMO/
 outdir:   "/scratch/rmlab/rmlab_shared3/alferreiro/DMS_PacBio/DBaldridge_SMO/pipeline_out"
 
 gene_segments_csv: "/scratch/rmlab/rmlab_shared3/alferreiro/DMS_PacBio/240403_GeneSegments.csv"
+minimap2: "/home/alferreiro/minimap2/minimap2"
 
 # Alignment parameters
 error_cutoff: 0.001   # 1 - min_accuracy for CCS read filtering (AP2)
