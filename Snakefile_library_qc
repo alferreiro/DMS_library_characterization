@@ -1,0 +1,306 @@
+"""
+DMS PacBio Pipeline
+===================
+Input : fastq.gz  +  targets.gb  +  targets.yml
+Output: variant_dict.csv  |  per-gene HTML reports  |  summary_stats.csv
+
+Run from DMS_PacBio/ directory via the wrapper script:
+    bash shell_scripts/run_dms_pipeline.bash
+
+Or directly (swap --configfile for a different dataset):
+    snakemake -s Snakefile_library_qc --executor slurm --jobs 50 ...
+    snakemake -s Snakefile_library_qc --cores N   (local / interactive node)
+"""
+
+configfile: "config.yaml"
+
+import os
+import yaml as _yaml
+from Bio import SeqIO
+
+# ---------------------------------------------------------------------------
+# Parse genbank and yaml at Snakefile load time (requires BioPython)
+# ---------------------------------------------------------------------------
+
+def _parse_gene_params(gb_file):
+    """Return dict keyed by LOCUS name with gene_length_aa, barcode_length, gene_seq."""
+    params = {}
+    for record in SeqIO.parse(gb_file, "genbank"):
+        gene = record.name
+        params[gene] = {}
+        for feat in record.features:
+            if feat.type == "target_seq":
+                seq = str(feat.extract(record.seq))
+                params[gene]["gene_length_nt"] = len(seq)
+                params[gene]["gene_length_aa"]  = len(seq) // 3
+                params[gene]["gene_seq"]        = seq
+            elif feat.type in ("barcode", "UMI"):
+                params[gene]["barcode_length"] = len(str(feat.extract(record.seq)))
+    return params
+
+
+def _parse_querylist(yml_file):
+    """Features to query in AP2 (all keys per gene except clip params)."""
+    with open(yml_file) as f:
+        data = _yaml.safe_load(f)
+    skip = {"query_clip5", "query_clip3"}
+    first = next(iter(data.values()))
+    return [k for k in first if k not in skip]
+
+
+GENE_PARAMS = _parse_gene_params(config["genbank"])
+GENES       = list(GENE_PARAMS.keys())
+QUERYLIST   = _parse_querylist(config["yaml_config"])
+
+# Derive run_name from fastq basename
+_fq = os.path.basename(config["fastq"])
+for _ext in (".fastq.gz", ".fq.gz", ".fastq", ".fq"):
+    if _fq.endswith(_ext):
+        RUN_NAME = _fq[:-len(_ext)]
+        break
+else:
+    RUN_NAME = _fq
+
+OUTDIR = config["outdir"]
+
+# Canonical sub-directory paths
+AP1_OUT      = f"{OUTDIR}/target_seq_align_and_parse/target_seq_{RUN_NAME}"
+CONSENSUS    = f"{OUTDIR}/target_seq_consensus"
+GENE_SEQS    = f"{OUTDIR}/gene_seqs"
+PROCESSED    = f"{OUTDIR}/Processed_Variant_Dicts"
+REPORTS      = f"{OUTDIR}/reports"
+LOGS         = f"{OUTDIR}/logs"
+
+
+# ---------------------------------------------------------------------------
+# Target rule
+# ---------------------------------------------------------------------------
+
+rule all:
+    input:
+        expand(f"{PROCESSED}/{{gene}}_PREPROCESSED_vardict_AllVars.csv", gene=GENES),
+        expand(f"{GENE_SEQS}/{{gene}}_possiblemutations.csv",            gene=GENES),
+        expand(f"{REPORTS}/{{gene}}_report.html",                        gene=GENES),
+        f"{OUTDIR}/variant_dict.csv",
+        f"{OUTDIR}/summary_stats.csv",
+
+
+# ---------------------------------------------------------------------------
+# Rule 0 – extract gene sequences from genbank
+# ---------------------------------------------------------------------------
+
+rule write_gene_seqs:
+    """Write plain-text gene sequences for mutation_space.py and preprocess."""
+    input:
+        gb = config["genbank"],
+    output:
+        expand(f"{GENE_SEQS}/{{gene}}_genesequence.txt", gene=GENES),
+    run:
+        os.makedirs(GENE_SEQS, exist_ok=True)
+        for gene, params in GENE_PARAMS.items():
+            with open(f"{GENE_SEQS}/{gene}_genesequence.txt", "w") as fh:
+                fh.write(params["gene_seq"])
+
+
+# ---------------------------------------------------------------------------
+# Rule 1 – align and parse (AP1)  — runs once for all genes together
+# ---------------------------------------------------------------------------
+
+rule align_parse:
+    """Align all PacBio reads against all targets; produce per-gene aligned CSVs."""
+    input:
+        fastq = config["fastq"],
+        gb    = config["genbank"],
+        yml   = config["yaml_config"],
+    output:
+        expand(f"{AP1_OUT}/{{gene}}_aligned.csv", gene=GENES),
+    log:
+        f"{LOGS}/align_parse.log",
+    threads: 8
+    resources:
+        mem_mb   = 24000,
+        runtime  = "8h",
+        slurm_partition = "general",
+    shell:
+        """
+        mkdir -p {LOGS}
+        source shell_scripts/activate_env.sh
+        python python_scripts/align_parse.py \
+            --outdir  {OUTDIR} \
+            --target_gb {input.gb} \
+            --fastq   {input.fastq} \
+            --library_name target_seq \
+            --yaml    {input.yml} \
+            > {log} 2>&1
+        """
+
+
+# ---------------------------------------------------------------------------
+# Rule 2 – find consensus (AP2)  — per gene
+# ---------------------------------------------------------------------------
+
+rule find_consensus:
+    """Build per-barcode consensus sequences and filter by accuracy."""
+    input:
+        aligned = f"{AP1_OUT}/{{gene}}_aligned.csv",
+    output:
+        consensus = f"{CONSENSUS}/{{gene}}/CONSENSUS_mutations_target_seq.csv",
+    log:
+        f"{LOGS}/consensus_{{gene}}.log",
+    threads: 2
+    resources:
+        mem_mb  = 8000,
+        runtime = "4h",
+        slurm_partition = "general",
+    params:
+        querylist    = " ".join(QUERYLIST),
+        error_cutoff = config.get("error_cutoff", 0.001),
+        outdir_gene  = lambda wc: f"{CONSENSUS}/{wc.gene}",
+    shell:
+        """
+        mkdir -p {params.outdir_gene}
+        source shell_scripts/activate_env.sh
+        python python_scripts/FIND_CONSENSUS2.py \
+            --alignment   {input.aligned} \
+            --outdir      {params.outdir_gene} \
+            --targetname  {wildcards.gene} \
+            --querylist   {params.querylist} \
+            --error_cutoff {params.error_cutoff} \
+            > {log} 2>&1
+        """
+
+
+# ---------------------------------------------------------------------------
+# Rule 3 – mutation space (AP4)  — per gene
+# ---------------------------------------------------------------------------
+
+rule mutation_space:
+    """Enumerate all possible AA mutations per locus (single-nt-change model)."""
+    input:
+        geneseq = f"{GENE_SEQS}/{{gene}}_genesequence.txt",
+    output:
+        mutspace = f"{GENE_SEQS}/{{gene}}_possiblemutations.csv",
+    log:
+        f"{LOGS}/mutation_space_{{gene}}.log",
+    resources:
+        mem_mb  = 2000,
+        runtime = "30m",
+        slurm_partition = "general",
+    shell:
+        """
+        source shell_scripts/activate_env.sh
+        python python_scripts/mutation_space.py \
+            {input.geneseq} \
+            {output.mutspace} \
+            > {log} 2>&1
+        """
+
+
+# ---------------------------------------------------------------------------
+# Rule 4 – preprocess variant dicts (AP3b)  — per gene, keeps ALL variants
+# ---------------------------------------------------------------------------
+
+rule preprocess_variants:
+    """Annotate mutations (codon→AA), classify indels; retain all barcodes."""
+    input:
+        consensus = f"{CONSENSUS}/{{gene}}/CONSENSUS_mutations_target_seq.csv",
+        geneseq   = f"{GENE_SEQS}/{{gene}}_genesequence.txt",
+    output:
+        vardict = f"{PROCESSED}/{{gene}}_PREPROCESSED_vardict_AllVars.csv",
+    log:
+        f"{LOGS}/preprocess_{{gene}}.log",
+    resources:
+        mem_mb  = 4000,
+        runtime = "2h",
+        slurm_partition = "general",
+    params:
+        aa_length      = lambda wc: GENE_PARAMS[wc.gene]["gene_length_aa"],
+        barcode_length = lambda wc: GENE_PARAMS[wc.gene]["barcode_length"],
+    shell:
+        """
+        mkdir -p {PROCESSED}
+        source shell_scripts/activate_env.sh
+        python python_scripts/preprocess_variantdicts_keepall.py \
+            {input.consensus} \
+            {output.vardict} \
+            {params.aa_length} \
+            {params.barcode_length} \
+            {input.geneseq} \
+            > {log} 2>&1
+        """
+
+
+# ---------------------------------------------------------------------------
+# Rule 5 – characterize (R Markdown)  — per gene
+# ---------------------------------------------------------------------------
+
+rule characterize:
+    """Generate HTML QC report and summary CSV for each gene library."""
+    input:
+        vardict           = f"{PROCESSED}/{{gene}}_PREPROCESSED_vardict_AllVars.csv",
+        mutspace          = f"{GENE_SEQS}/{{gene}}_possiblemutations.csv",
+        fns_script        = "R_scripts/240607_alignparse_fns.R",
+        rmd               = "R_scripts/dms_characterization.Rmd",
+        gene_segments_csv = config["gene_segments_csv"],
+    output:
+        html    = f"{REPORTS}/{{gene}}_report.html",
+        summary = f"{REPORTS}/{{gene}}_summary.csv",
+    log:
+        f"{LOGS}/characterize_{{gene}}.log",
+    resources:
+        mem_mb  = 8000,
+        runtime = "2h",
+        slurm_partition = "general",
+    params:
+        gene_length_aa = lambda wc: GENE_PARAMS[wc.gene]["gene_length_aa"],
+    shell:
+        """
+        mkdir -p {REPORTS}
+        export RSTUDIO_PANDOC=/ref/rmlab/software/alferreiro/micromamba/envs/brb_seq_r/bin
+        /ref/rmlab/software/alferreiro/micromamba/envs/brb_seq_r/bin/Rscript -e "
+          rmarkdown::render(
+            'R_scripts/dms_characterization.Rmd',
+            output_file  = '{output.html}',
+            knit_root_dir = getwd(),
+            params = list(
+              gene              = '{wildcards.gene}',
+              vardict_file      = '{input.vardict}',
+              mutspace_file     = '{input.mutspace}',
+              gene_segments_csv = '{input.gene_segments_csv}',
+              gene_length_aa    = {params.gene_length_aa},
+              fns_script        = '{input.fns_script}',
+              summary_outfile   = '{output.summary}'
+            )
+          )
+        " > {log} 2>&1
+        """
+
+
+# ---------------------------------------------------------------------------
+# Rule 6 – combine all genes' variant dicts into one deliverable CSV
+# ---------------------------------------------------------------------------
+
+rule combine_variant_dicts:
+    input:
+        expand(f"{PROCESSED}/{{gene}}_PREPROCESSED_vardict_AllVars.csv", gene=GENES),
+    output:
+        f"{OUTDIR}/variant_dict.csv",
+    run:
+        import pandas as pd
+        pd.concat([pd.read_csv(f) for f in input], ignore_index=True).to_csv(
+            output[0], index=False)
+
+
+# ---------------------------------------------------------------------------
+# Rule 7 – combine per-gene summary CSVs
+# ---------------------------------------------------------------------------
+
+rule combine_summaries:
+    input:
+        expand(f"{REPORTS}/{{gene}}_summary.csv", gene=GENES),
+    output:
+        f"{OUTDIR}/summary_stats.csv",
+    run:
+        import pandas as pd
+        pd.concat([pd.read_csv(f) for f in input], ignore_index=True).to_csv(
+            output[0], index=False)

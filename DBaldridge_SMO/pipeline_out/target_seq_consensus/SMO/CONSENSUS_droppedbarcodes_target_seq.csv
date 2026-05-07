@@ -1,0 +1,4 @@
+drop_reason,number_barcodes
+indels diff too large,46612
+minor indels too frequent,806
+minor subs too frequent,14828

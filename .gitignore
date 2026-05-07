@@ -1,0 +1,47 @@
+# ── Other projects in this directory (not part of this pipeline) ─────────────
+DantasScreen1_Illumina/
+MD935_Kinnex_LATS2/
+ClaudeTests/
+CRISPR/
+
+# ── Stray files not part of the pipeline ─────────────────────────────────────
+DBaldridge_SMO/SMO_genesequence.txt
+
+# ── Raw sequencing data (large) ───────────────────────────────────────────────
+*.fastq.gz
+*.fq.gz
+*.bam
+*.bam.pbi
+*.sam
+*.xml
+
+# Explicitly named large raw-data directories
+DBaldridge_SMO/MD969_Kinnex6Plex/
+DBaldridge_SMO/MD990_Linear/
+
+# ── Large pipeline intermediates (> 50 MB) ────────────────────────────────────
+# Per-read alignment and QC tables from AP1
+DBaldridge_SMO/pipeline_out/target_seq_align_and_parse/
+DBaldridge_SMO/pipeline_out/accuracy.csv
+DBaldridge_SMO/pipeline_out/length.csv
+
+# Per-CCS error distribution table from AP2 (one row per read)
+DBaldridge_SMO/pipeline_out/target_seq_consensus/SMO/errordistribution_alignedCCSs.csv
+
+# Full consensus table before preprocessing (one row per barcode, all reads)
+DBaldridge_SMO/pipeline_out/target_seq_consensus/SMO/CONSENSUS_mutations_target_seq.csv
+
+# ── Snakemake working directory ───────────────────────────────────────────────
+.snakemake/
+
+# ── Slurm logs (run-specific, not part of the pipeline code) ─────────────────
+slurmout/
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── R session artifacts ───────────────────────────────────────────────────────
+*.RData
+*.Rhistory

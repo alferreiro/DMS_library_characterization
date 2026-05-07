@@ -1,0 +1,27 @@
+No passes statistics available.
+('SMO',)
+Parsing configuration:
+
+SMO:
+  query_clip5: null
+  query_clip3: null
+  target_seq:
+    filter:
+      clip5: 0
+      clip3: 0
+      mutation_nt_count: 400
+      mutation_op_count: null
+    return:
+    - mutations
+    - accuracy
+  barcode:
+    filter:
+      clip5: 0
+      clip3: 0
+      mutation_nt_count: 0
+      mutation_op_count: 0
+    return:
+    - sequence
+    - accuracy
+
+minimap2 2.26-r1175: -A2 -B4 -O12 -E2 --end-bonus=13 --secondary=no --cs

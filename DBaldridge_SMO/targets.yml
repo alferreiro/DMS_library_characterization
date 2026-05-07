@@ -1,0 +1,15 @@
+SMO:
+  query_clip5: null
+  query_clip3: null
+  target_seq:
+    filter:
+      clip5: 0
+      clip3: 0
+      mutation_nt_count: 400
+      mutation_op_count: null
+    return: [mutations, accuracy]
+  barcode:
+    filter:
+      clip5: 0
+      clip3: 0
+    return: [sequence, accuracy]

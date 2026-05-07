@@ -1,0 +1,2 @@
+"gene","gene_length_aa","n_barcodes_total","n_barcodes_vcs2","n_barcodes_vcs3","mean_vcs","median_vcs","pct_singleton","pct_wildtype","pct_synonymous","pct_single_missense","pct_multi_missense","pct_early_stop","pct_medium_stop","pct_late_stop","pct_frameshift","pct_codon_disrupting","pct_clean_inframe_indel","pct_complex","pct_loci_any_mutation","pct_loci_sat80","mean_shannon_E","gini_coefficient"
+"SMO",788,1115403,556328,277539,2,1,50.12,28.49,8.76,25.54,13.89,0.39,2.56,0.54,6.59,1.15,0.01,12.07,99.9,99.9,0.922,0.3338

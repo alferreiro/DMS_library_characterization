@@ -1,0 +1,33 @@
+BACKGROUND
+We're working with deep mutational scanning data. A library of mutated variants of a gene is generated using mutagenic PCR. To control the rate of mutagenesis, longer genes are first broken down into ~700-800bp segments which are mutagenized separately. Each mutagenized segment is then ligated to the other wildtype segments to reconstruct the gene. Ideally, each gene variant will only have only one nucleic acid mutation. On a per codon basis, this assumption of only a single nucleic acid change limits the number of possible amino acid mutations at each locus, depending on the original amino acid identity. The script shell_scripts/AP4_possiblemutations.bash creates a dictionary of the possible amino acid mutations per codon under this assumption. Of course, some nucleic acid changes will result in synonymous mutations. In reality what we observe is many library members that are actually the wildtype sequence, some amount of synonymous variants (both are good internal controls), a good amount of variants that are the ideal outcome of a single amino acid mutation, and then to lesser extent variants with indels or multiple mutations.
+
+In addition, the variant library is barcoded. A short DNA barcode can therefore be associated with each variant sequence. The libraries are generated such that each plasmid has one gene variant and its associated barcode. Each target gene will have a genbank file associated with it indicating the locations of the barcode and the gene in the plasmid. To sequence the libraries using PacBio, sometimes the full plasmids are sequenced, and sometimes the barcode and gene regions are amplified and the amplicons ligated to generate pacbio 'smartbell' molecules with up to 8 or so tandem ligated sequences (Kinnex array). This increases the sequence efficiency since we are not sequencing plasmid backbone over and over. 
+
+What this means is that a PacBio dataset can include variant libraries for one or more genes. It can also include full plasmid or segmented (Kinnex) sequences 
+
+ANALYSIS APPROACH
+I have previously used the python alignparse module to characterize these variant libraries. These are in shell_scripts/ and start with the prefix 'AP'. There is a micromamba environment in my micromamba directory that is appropriate for these dms analyses (loads alignparse). This module is nice in that it can handle multi-gene libraries. The provide genbank file for alignment and the yml file indicating alignment and filtering parameters will simply have multiple entries, one for each gene. 
+
+Our current goal is to generate a pipeline (snakemake) where the user provides the path to the pacbio fastq file, and the genbank and yml files containing information for one or more genes, and the pipeline progresses through the AP shell scripts  (edited as needed and appropriate) to generate a consensus variant dictionary that maps each barcode to an annotated variant. Importantly, I used to exclude any barcode associated with a sequence that has more than one variant but I now believe we should keep all variants. 
+
+Information like the gene's wildtype sequence, its length (in basepairs or amino acids), the length of the barcode, and so on can be inferred from the genbank file.
+
+I should note, for the purpose of creating this pipeline our input will be DBaldridge_SMO/SMO.fastq.gz,   
+DBaldridge_SMO/targets.gb, and DBaldridge_SMO/targets.yml. This is a one gene library, but the pipeline should be able to handle inputs where the genbank file and yml file have multiple genes. 
+
+In addition the pipeline should include downstream characterization of the library or libraries similar to what I previously achieved using R_scripts/241130_CleanCharacterization.R. I want to summarize and visualize metrics like:
+-How many unique barcodes the library contains
+-The number of supporting reads per barcode-variant
+-The proportions of the different types of variants (wild type, synonymous, etc.), including new category of variants with multiple nonsynonymous mutations. 
+-Evenness and saturation of mutations across the length of the gene, and whether there were differences by gene segment (segment positions within the gene are available at 240403_GeneSegments.csv)
+-Are there any barcodes or variants that are disproportionately over or underrepresented in the library? 
+-Any other metrics you can think of that would be useful. 
+
+I have a suite of helper functions I created in R at R_scripts/240607_alignparse_fns.R. Feel free to use these or edit them or even refactor them. 
+
+DELIVERABLES
+The final deliverables for this pipeline should be 1) a csv file containing the variant dictionary and 2) an html report summarizing and visualizing the downstream characterization analyses, and 3) a csv or text file with key summary statistics. 
+In addition, the summary file 240704_DMS_RunSummaries_SDN.csv should be updated with the appropriate metrics for each library. 
+
+NOTE
+Recall that I don't have python in my path. It has to be loaded via an appropriate micromamba environment. Large tasks and python scripts should be run on an interactive node or submitted as a job to slurm. 
